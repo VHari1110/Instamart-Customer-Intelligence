@@ -88,7 +88,7 @@ def run_pipeline(tickets, system_prompt, token_budget):
             rec["status"] = "skipped_empty"
         elif est_tokens(text) > MAX_INPUT_TOKENS:
             rec["status"] = "flagged_long"
-        elif total_tokens >= token_budget:
+        elif total_tokens + 68 > token_budget:
             rec["status"] = "budget_exhausted"
         else:
             clean, _ = redact(text)

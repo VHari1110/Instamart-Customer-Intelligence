@@ -43,11 +43,7 @@ print("Completed orders used:", len(completed_orders))
 if completed_orders.empty:
     raise ValueError("No valid completed orders found.")
 
-analysis_date = (
-    completed_orders["order_ts"].max().normalize()
-    + pd.Timedelta(days=1)
-)
-
+analysis_date = pd.Timestamp("2025-10-01")
 rfm = (
     completed_orders.groupby("customer_id")
     .agg(
@@ -118,22 +114,15 @@ rfm["RFM_score"] = (
 # --------------------------------------------------
 # 6. Prepare data for K-Means clustering
 # --------------------------------------------------
-# Use log transformation to reduce skew in frequency
-# and monetary values.
-cluster_features = rfm[["recency", "frequency", "monetary"]].copy()
 
-# Customers without a completed order cannot have a
-# meaningful recency, so use the maximum observed recency
-# plus one day for clustering only.
-max_recency = rfm["recency"].max()
+# Keep only customers with valid RFM recency.
+rfm = rfm.dropna(subset=["recency"]).copy()
 
-if pd.isna(max_recency):
-    max_recency = 1
+cluster_features = rfm[
+    ["recency", "frequency", "monetary"]
+].copy()
 
-cluster_features["recency"] = (
-    cluster_features["recency"].fillna(int(max_recency) + 1)
-)
-
+# Log-transform skewed variables.
 cluster_features["frequency"] = np.log1p(
     cluster_features["frequency"]
 )
@@ -141,24 +130,63 @@ cluster_features["monetary"] = np.log1p(
     cluster_features["monetary"].clip(lower=0)
 )
 
+# Scale features.
 scaler = StandardScaler()
 scaled_features = scaler.fit_transform(cluster_features)
 
-# Choose a practical cluster count, without exceeding
-# the number of distinct customer feature rows.
-distinct_rows = np.unique(scaled_features, axis=0).shape[0]
-n_clusters = min(4, len(rfm), distinct_rows)
+# Compare K=2 to K=8.
+from sklearn.metrics import silhouette_score
 
-if n_clusters >= 2:
-    kmeans = KMeans(
-        n_clusters=n_clusters,
+cluster_results = []
+
+for k in range(2, 9):
+    if np.unique(scaled_features, axis=0).shape[0] < k:
+        continue
+
+    model = KMeans(
+        n_clusters=k,
         random_state=42,
         n_init=10,
     )
-    rfm["segment"] = kmeans.fit_predict(scaled_features)
-else:
-    rfm["segment"] = 0
 
+    labels = model.fit_predict(scaled_features)
+
+    score = silhouette_score(scaled_features, labels)
+
+    cluster_results.append({
+        "K": k,
+        "Inertia": model.inertia_,
+        "Silhouette": score,
+    })
+
+cluster_comparison = pd.DataFrame(cluster_results)
+
+print("\nK-Means comparison (K=2 to K=8):")
+print(cluster_comparison.round(4).to_string(index=False))
+
+# Select the best silhouette score among K=3, 4, and 5.
+eligible = cluster_comparison[
+    cluster_comparison["K"].isin([3, 4, 5])
+]
+
+if eligible.empty:
+    raise ValueError("No valid K available among 3, 4, and 5.")
+
+best_k = int(
+    eligible.loc[eligible["Silhouette"].idxmax(), "K"]
+)
+
+print("\nSelected K:", best_k)
+
+kmeans = KMeans(
+    n_clusters=best_k,
+    random_state=42,
+    n_init=10,
+)
+
+rfm["segment"] = kmeans.fit_predict(scaled_features)
+
+# --------------------------------------------------
 # --------------------------------------------------
 # 7. PCA: reduce the scaled features to two dimensions
 # --------------------------------------------------
@@ -202,13 +230,40 @@ print("Premium customers:", rfm["premium_flag"].sum())
 
 rfm["segment_id"] = rfm["segment"]
 
-# Create readable names for the existing segment IDs.
-rfm["segment_name"] = rfm["segment"].map({
-    0: "Regular Customers",
-    1: "Premium Customers",
-    2: "Low Activity Customers",
-    3: "Occasional Customers",
-}).fillna("Other Customers")
+# Assign segment names based on average monetary value.
+segment_order = (
+    rfm.groupby("segment")["monetary"]
+    .mean()
+    .sort_values()
+    .index.tolist()
+)
+
+if len(segment_order) == 3:
+    names = [
+        "Low Activity Customers",
+        "Regular Customers",
+        "Premium Customers",
+    ]
+elif len(segment_order) == 4:
+    names = [
+        "Low Activity Customers",
+        "Occasional Customers",
+        "Regular Customers",
+        "Premium Customers",
+    ]
+elif len(segment_order) == 5:
+    names = [
+        "Low Activity Customers",
+        "Occasional Customers",
+        "Regular Customers",
+        "High Value Customers",
+        "Premium Customers",
+    ]
+else:
+    raise ValueError("Unexpected number of customer segments.")
+
+segment_name_map = dict(zip(segment_order, names))
+rfm["segment_name"] = rfm["segment"].map(segment_name_map)
 
 rfm["is_premium"] = rfm["premium_flag"].astype(int)
 

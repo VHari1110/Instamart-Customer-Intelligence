@@ -154,6 +154,41 @@ The objective was to identify customers likely to lapse using customer transacti
 - Label period ended: 2025-10-01
 - Prediction cutoff: 2025-09-01
 
+### RFM Analysis and Customer Segmentation
+
+RFM analysis used 1,175 customers with valid completed-order history, using 2025-10-01 as the snapshot date.
+
+- Recency: median 19 days, minimum 0, maximum 180.
+- Frequency: mean 9.46 orders, maximum 33.
+- Monetary value: mean INR 2,552.06, maximum INR 14,766.55.
+
+K-Means was evaluated for K=2 through K=8 using StandardScaler, log-transformed frequency and monetary values, `random_state=42`, and `n_init=10`.
+
+| K | Inertia | Silhouette |
+|---:|---:|---:|
+| 2 | 1533.2913 | 0.5067 |
+| 3 | 1019.8742 | 0.4817 |
+| 4 | 744.4791 | 0.4656 |
+| 5 | 627.4124 | 0.4410 |
+| 6 | 529.3685 | 0.4440 |
+| 7 | 469.9794 | 0.4385 |
+| 8 | 425.0159 | 0.4385 |
+
+K=3 was selected from the permitted K=3, 4, and 5 choices because it had the highest silhouette score among those candidates.
+
+| Segment | Customers | Average Monetary Value |
+|---|---:|---:|
+| Low Activity Customers | 157 | INR 490.92 |
+| Regular Customers | 383 | INR 816.07 |
+| Premium Customers | 635 | INR 4,108.72 |
+
+Premium status was assigned to the segment with the highest average monetary value. Segment IDs are arbitrary cluster labels.
+
+PCA explained variance:
+- Component 1: 75.51%
+- Component 2: 16.70%
+- Combined: 92.21%
+
 ### Model Comparison
 
 | Model | Cross-validation F1 | Test Accuracy | Lapsed Precision | Lapsed Recall | Lapsed F1 |
@@ -162,6 +197,62 @@ The objective was to identify customers likely to lapse using customer transacti
 | Random Forest | 0.6811 | 74% | 0.66 | 0.65 | 0.66 |
 
 The baseline model achieved 61.68% accuracy but had an F1 score of 0 for the lapsed class.
+
+### Train/Test Split and Hyperparameter Tuning
+
+The lapse dataset was split into 924 training rows and 232 test rows using stratification and `random_state=42`.
+
+- Logistic Regression: GridSearchCV selected `C=100`; best cross-validation F1 was 0.6506.
+- Random Forest: GridSearchCV selected `max_depth=8` and `min_samples_leaf=10`; best cross-validation F1 was 0.6811.
+- Random Forest tuning evaluated 9 parameter combinations using 5-fold cross-validation (45 fits).
+
+### Test Set Confusion Matrices
+
+Logistic Regression:
+
+| | Predicted not lapsed | Predicted lapsed |
+|---|---:|---:|
+| Actual not lapsed | 111 | 32 |
+| Actual lapsed | 31 | 58 |
+
+Random Forest:
+
+| | Predicted not lapsed | Predicted lapsed |
+|---|---:|---:|
+| Actual not lapsed | 113 | 30 |
+| Actual lapsed | 31 | 58 |
+
+### Training-Only Oversampling
+
+Oversampling was applied only to the training data. The test set remained unchanged.
+
+| Model | Lapsed Precision | Lapsed Recall | Lapsed F1 |
+|---|---:|---:|---:|
+| Unbalanced Logistic Regression | 0.6444 | 0.6517 | 0.6480 |
+| Oversampled Logistic Regression | 0.5891 | 0.8539 | 0.6972 |
+
+Oversampling increased recall but reduced precision, showing the trade-off between identifying more lapsed customers and generating additional false positives.
+
+### Preprocessing and Feature Interpretation
+
+- Numeric features were imputed and standardized using training data only.
+- Categorical features were imputed and one-hot encoded with one category dropped.
+- Full cohort frequency mean: 8.0285.
+- Training-only fitted scaler frequency mean: 8.1147.
+
+Logistic Regression coefficient examples:
+- Frequency: -1.6982
+- Favorite category — Electronics: -1.1367
+- Monetary value: +0.2846
+
+Top Random Forest feature importances:
+- Frequency: 0.2796
+- Monetary value: 0.2712
+- Recency: 0.1151
+- Average delivery time: 0.0613
+- Cancellation rate: 0.0523
+
+Feature importance and coefficients describe model associations; they do not establish causation.
 
 ### Selected Model
 
@@ -210,6 +301,18 @@ The redaction process detected and replaced:
 
 No matching PII patterns remained after redaction.
 
+### Retry and Error Handling
+
+The mock LLM call uses a retry mechanism for transient errors.
+
+- Maximum retries: 3 after the initial attempt.
+- Backoff: exponential, starting at 0.05 seconds.
+- Jitter: random multiplier between 0.9 and 1.15.
+- Random seed: 42 for reproducible jitter.
+- If all retries fail, the transient error is raised rather than silently ignored.
+
+At the start of each pipeline run, the mock LLM state, transient error counter, and retry log are reset. This keeps retry statistics separate between runs.
+
 ### Zero-shot vs. Few-shot Evaluation
 
 | Metric | Zero-shot | Few-shot |
@@ -225,14 +328,15 @@ The zero-shot run also recorded 12 keyword-based classifications and 9 invalid m
 ### Budget Evaluation
 
 A budget demonstration using a 6,000-token limit produced:
-- 91 JSON classifications
-- 51 budget-exhausted results
+
+- 90 JSON classifications
+- 52 budget-exhausted results
 - 8 keyword-based classifications
 - 6 invalid model outputs
 - 4 skipped empty tickets
 - 4 flagged long tickets
 
-The final token accounting was 6,023, slightly exceeding the configured budget.
+The final token accounting was 5,975, remaining within the configured 6,000-token budget.
 
 ### Final Few-shot Routing Results
 
@@ -248,6 +352,22 @@ All 164 tickets were processed in the final run.
 Priority distribution:
 - HIGH: 88
 - NORMAL: 76
+
+### Ticket Routing Rules
+
+The final routing logic applies the following rules in order:
+
+| Condition | Assigned Route | Priority |
+|---|---|---|
+| Empty ticket | Human review | NORMAL |
+| Long ticket | Human review | NORMAL |
+| Invalid model output | Human review | NORMAL |
+| Budget exhausted | Human review | NORMAL |
+| Fraud category | Security team | HIGH |
+| Premium customer | Premium desk | HIGH |
+| All other valid tickets | Support queue | NORMAL |
+
+Fraud tickets are routed to the security team before checking premium status. Tickets requiring human review are not automatically assigned to another team.
 
 ### Output Files
 
@@ -384,15 +504,20 @@ Checkpoint files are stored in the `state/` directory.
 
 
 
-The implemented agent follows the ReAct pattern: it alternates between model decisions, tool execution, and tool observations. This enables it to use order data and policy results before choosing the next action.
+The implemented agent follows the ReAct pattern. It alternates between model reasoning, tool execution, and tool observations. This allows the agent to use the latest order and policy results before deciding its next action.
 
+Plan-and-Execute follows a different approach: it creates a sequence of steps before execution and then carries out that plan. It can reduce repeated planning decisions, but may need replanning when a tool result differs from expectations.
 
+| Aspect | ReAct | Plan-and-Execute |
+|---|---|---|
+| Decision process | Alternates reasoning and actions | Plans steps before execution |
+| Tool results | Can influence the next action immediately | May require replanning |
+| Flexibility | Adapts after each observation | Depends on the quality of the initial plan |
+| Potential limitation | More model calls during repeated reasoning | An initial plan may become outdated |
 
-For S1, the earlier successful run recorded five model calls and approximately 1,113 tokens. The crash-and-resume run recorded 1,103 tokens, with the same final refund outcome.
+For S1, the successful run recorded five model calls and approximately 1,113 tokens. The crash-and-resume run recorded 1,103 tokens with the same refund outcome.
 
-
-
-A separate Plan-and-Execute baseline has not yet been implemented or measured. Therefore, a numerical comparison of its calls and token usage cannot be reported reliably. A fair comparison should run both approaches on the same scenarios and compare model calls, tokens, latency, outcome accuracy, and safety behavior.
+A separate Plan-and-Execute baseline has not been implemented or measured. Therefore, no numerical performance comparison is claimed. A fair comparison would run both approaches on identical scenarios and measure calls, tokens, latency, accuracy, and safety.
 
 
 
@@ -418,7 +543,27 @@ A separate Plan-and-Execute baseline has not yet been implemented or measured. T
 
 **Important:** This is a simulated assignment workflow. The refund ledger records simulated actions and should not be treated as a real payment-system integration.
 
+### Policy RAG Implementation and Evaluation
 
+Five policy documents were split into 15 chunks using a 40-word chunk size and 10-word overlap.
+
+The retriever uses:
+- `TfidfVectorizer` to convert policy text into TF-IDF features.
+- Cosine similarity to rank retrieved chunks against each question.
+- Top-3 chunk retrieval to provide context to the policy assistant.
+
+The assistant receives a system instruction marked `POLICY ASSISTANT` and a user message containing separate `CONTEXT` and `QUESTION` sections. It must answer only from the supplied policy context and use the required fallback response when information is unavailable.
+
+**Normal overlap evaluation (10-word overlap):**
+
+| Evaluation | Result |
+|---|---:|
+| Total questions | 14 |
+| Expected document retrieved | 12/12 |
+| Expected fact found in answer | 12/12 |
+| Correct fallback for unanswerable questions | 2/2 |
+
+All 14 evaluation questions passed their expected checks.
 
 
 ### Zero-Overlap RAG Evaluation

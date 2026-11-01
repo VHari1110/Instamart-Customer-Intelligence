@@ -107,7 +107,7 @@ T0004,C0721,classified_json,fraud,Premium Customers,HIGH,security_team,61
 T0148,C1057,flagged_invalid_output,,Premium Customers,NORMAL,human_review,61
 T0088,C0852,classified_json,fraud,Occasional Customers,HIGH,security_team,55
 T0030,C0015,classified_keyword,delivery,Regular Customers,NORMAL,support_queue,60
-T0067,C0704,classified_json,technical,Regular Customers,NORMAL,support_queue,48
+T0067,C0704,budget_exhausted,,Regular Customers,NORMAL,human_review,0
 T0029,C0885,budget_exhausted,,Occasional Customers,NORMAL,human_review,0
 T0129,C0237,budget_exhausted,,Regular Customers,NORMAL,human_review,0
 T0105,C0063,budget_exhausted,,Premium Customers,NORMAL,human_review,0
