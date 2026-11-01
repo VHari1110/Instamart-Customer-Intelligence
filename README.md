@@ -10,33 +10,48 @@ All refund actions are simulated. No real payments or refunds are processed.
 
 Run all commands from the project root using the project virtual environment.
 
-1. Install dependencies
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+### 1. Install dependencies
 
-2. Audit and clean raw data
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+### 2. Audit and clean raw data
+
+```powershell
 .\.venv\Scripts\python.exe data\clean\audit_data.py
 .\.venv\Scripts\python.exe data\clean\clean_customers.py
 .\.venv\Scripts\python.exe data\clean\clean_orders.py
 .\.venv\Scripts\python.exe data\clean\clean_products.py
+```
 
-3. Build and validate the database
+### 3. Build and validate the database
+
+```powershell
 .\.venv\Scripts\python.exe build_database.py
 .\.venv\Scripts\python.exe validate_project.py
+```
 
-4. Run customer segmentation and lapse prediction
+### 4. Run customer segmentation and lapse prediction
+
+```powershell
 .\.venv\Scripts\python.exe customer_segments.py
 .\.venv\Scripts\python.exe lapse_model.py
+```
 
-5. Run ticket classification
-The Part C script uses the pre-generated assignment input file: outputs/customer_segments_assignment.csv
+### 5. Run ticket classification
+
+The Part C script uses the pre-generated assignment input file: `outputs/customer_segments_assignment.csv`.
+
+```powershell
 .\.venv\Scripts\python.exe src\part_c_triage.py
+```
 
 ### 6. Refund agent
 
 Refund agent scenarios are not part of the routine reproduction sequence. They can append entries to the simulated refund ledger and run log. Use an isolated copy of the project when testing scenarios or crash/resume behaviour.
 
 The refund agent uses a simulated ledger and does not process real payments.
-
 
 ## Part A — Data Cleaning and Database Preparation
 
@@ -397,25 +412,15 @@ The implementation uses Python, SQLite, a policy retriever, and the supplied `mo
 ### 2. Scenario Evaluation
 
 
-
 | Scenario | Expected outcome | Observed outcome | Result |
-
 |---|---|---|---|
-
 | S1 | REFUND ₹128.25 | REFUND ₹128.25 | PASS |
-
 | S2 | REFUND ₹135.00 | REFUND ₹135.00 | PASS |
-
 | S3 | ESCALATE ₹1,999.00 | ESCALATE | PASS |
-
 | S4 | DENIED ₹0.00 | DENIED | PASS |
-
 | S5 | DENIED ₹0.00 | DENIED | PASS |
-
 | S6 | NOT_FOUND ₹0.00 | NOT_FOUND | PASS |
-
 | S7 | FALLBACK | FALLBACK_MAX_ITERATIONS | PASS |
-
 
 
 All seven scenarios produced the expected outcome categories.
@@ -443,15 +448,10 @@ All seven scenarios produced the expected outcome categories.
 ### 3. Safety and Fallback Tests
 
 
-
 | Test | Configuration | Observed result |
-
 |---|---|---|
-
 | Token limit | `token_limit=200` | `FALLBACK_TOKEN_LIMIT` |
-
 | Timeout | `time_limit_seconds=0` | `FALLBACK_TIMEOUT` |
-
 | Maximum iterations | `max_iterations=3` | `FALLBACK_MAX_ITERATIONS` |
 
 
