@@ -75,7 +75,33 @@ def write_ledger(tool_name, order_id, refund_inr):
     return {"refund_inr": round(float(refund_inr), 2)}
 
 def issue_refund(order_id, refund_inr):
-    """Record an eligible refund only once per order."""
+    """Record an eligible automatic refund only once per order."""
+
+    order = get_order(order_id)
+
+    if "error" in order:
+        return {"status": "denied", "message": "Order not found."}
+
+    if order["status"] != "completed":
+        return {"status": "denied", "message": "Only completed orders are eligible."}
+
+    if (
+        order["delivery_minutes"] is None
+        or order["delivery_minutes"] <= 45
+    ):
+        return {"status": "denied", "message": "Delivery does not qualify for a late-delivery refund."}
+
+    expected_refund = round(order["order_amount"], 2)
+    requested_refund = round(float(refund_inr), 2)
+
+    if requested_refund != expected_refund or requested_refund <= 0:
+        return {"status": "denied", "message": "Refund amount does not match the eligible order amount."}
+
+    if requested_refund > 1000:
+        return {
+            "status": "denied",
+            "message": "Refunds above INR 1000 require human approval."
+        }
 
     if LEDGER_PATH.exists():
         with LEDGER_PATH.open("r", encoding="utf-8") as file:
@@ -86,23 +112,69 @@ def issue_refund(order_id, refund_inr):
                 entry = json.loads(line)
 
                 if (
-                    entry.get("tool") == "issue_refund"
+                    entry.get("tool") in ("issue_refund", "escalate_to_human")
                     and entry.get("order_id") == order_id
                 ):
                     return {
                         "refund_inr": entry["refund_inr"],
-                        "status": "already_refunded",
-                        "message": "Refund already recorded for this order."
+                        "status": "already_processed",
+                        "message": "A refund action is already recorded for this order."
                     }
 
-    result = write_ledger("issue_refund", order_id, refund_inr)
+    result = write_ledger("issue_refund", order_id, requested_refund)
     result["status"] = "issued"
     return result
 
 
 def escalate_to_human(order_id, refund_inr):
-    """Record a refund requiring human approval."""
-    return write_ledger("escalate_to_human", order_id, refund_inr)
+    """Record an eligible refund requiring human approval."""
+
+    order = get_order(order_id)
+
+    if "error" in order:
+        return {"status": "denied", "message": "Order not found."}
+
+    if order["status"] != "completed":
+        return {"status": "denied", "message": "Only completed orders are eligible."}
+
+    if (
+        order["delivery_minutes"] is None
+        or order["delivery_minutes"] <= 45
+    ):
+        return {"status": "denied", "message": "Delivery does not qualify for a late-delivery refund."}
+
+    expected_refund = round(order["order_amount"], 2)
+    requested_refund = round(float(refund_inr), 2)
+
+    if requested_refund != expected_refund or requested_refund <= 1000:
+        return {
+            "status": "denied",
+            "message": "Human escalation is required only for eligible refunds above INR 1000."
+        }
+
+    if LEDGER_PATH.exists():
+        with LEDGER_PATH.open("r", encoding="utf-8") as file:
+            for line in file:
+                if not line.strip():
+                    continue
+
+                entry = json.loads(line)
+
+                if (
+                    entry.get("tool") in ("issue_refund", "escalate_to_human")
+                    and entry.get("order_id") == order_id
+                ):
+                    return {
+                        "refund_inr": entry["refund_inr"],
+                        "status": "already_processed",
+                        "message": "A refund action is already recorded for this order."
+                    }
+
+    result = write_ledger("escalate_to_human", order_id, requested_refund)
+    result["status"] = "pending_human_approval"
+    return result
+
+
 
 
 TOOL_MAP = {

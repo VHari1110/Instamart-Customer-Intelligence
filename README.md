@@ -162,32 +162,33 @@ RFM analysis used 1,175 customers with valid completed-order history, using 2025
 - Frequency: mean 9.46 orders, maximum 33.
 - Monetary value: mean INR 2,552.06, maximum INR 14,766.55.
 
-K-Means was evaluated for K=2 through K=8 using StandardScaler, log-transformed frequency and monetary values, `random_state=42`, and `n_init=10`.
+K-Means was evaluated for K=2 through K=8 using StandardScaler on the original recency, frequency, and monetary features without log transformation, with `random_state=42` and `n_init=10`.
 
 | K | Inertia | Silhouette |
 |---:|---:|---:|
-| 2 | 1533.2913 | 0.5067 |
-| 3 | 1019.8742 | 0.4817 |
-| 4 | 744.4791 | 0.4656 |
-| 5 | 627.4124 | 0.4410 |
-| 6 | 529.3685 | 0.4440 |
-| 7 | 469.9794 | 0.4385 |
-| 8 | 425.0159 | 0.4385 |
+| 2 | 1820.7606 | 0.4650 |
+| 3 | 1268.2346 | 0.4452 |
+| 4 | 743.0711 | 0.5255 |
+| 5 | 617.3666 | 0.4805 |
+| 6 | 503.1706 | 0.4819 |
+| 7 | 408.4605 | 0.4163 |
+| 8 | 366.5035 | 0.4123 |
 
-K=3 was selected from the permitted K=3, 4, and 5 choices because it had the highest silhouette score among those candidates.
+K=4 was selected from the permitted K=3, 4, and 5 choices because it had the highest silhouette score among those candidates.
 
 | Segment | Customers | Average Monetary Value |
 |---|---:|---:|
-| Low Activity Customers | 157 | INR 490.92 |
-| Regular Customers | 383 | INR 816.07 |
-| Premium Customers | 635 | INR 4,108.72 |
+| Low Activity Customers | 182 | INR 685.99 |
+| Occasional Customers | 436 | INR 1,057.62 |
+| Regular Customers | 419 | INR 3,410.02 |
+| Premium Customers | 138 | INR 7,129.70 |
 
 Premium status was assigned to the segment with the highest average monetary value. Segment IDs are arbitrary cluster labels.
 
 PCA explained variance:
-- Component 1: 75.51%
-- Component 2: 16.70%
-- Combined: 92.21%
+- Component 1: 63.43%
+- Component 2: 21.80%
+- Combined: 85.23%
 
 ### Model Comparison
 
@@ -336,9 +337,7 @@ A budget demonstration using a 6,000-token limit produced:
 - 4 skipped empty tickets
 - 4 flagged long tickets
 
-The final token accounting was 5,975, remaining within the configured 6,000-token budget.
-
-### Final Few-shot Routing Results
+The final token accounting was 5,975 out of the 6,000-token budget. The pipeline reserves an estimated 68 tokens before starting each new model call to avoid exceeding the configured budget.
 
 All 164 tickets were processed in the final run.
 
@@ -515,60 +514,37 @@ Plan-and-Execute follows a different approach: it creates a sequence of steps be
 | Flexibility | Adapts after each observation | Depends on the quality of the initial plan |
 | Potential limitation | More model calls during repeated reasoning | An initial plan may become outdated |
 
-For S1, the successful run recorded five model calls and approximately 1,113 tokens. The crash-and-resume run recorded 1,103 tokens with the same refund outcome.
+For the recorded S1 comparison, the ReAct run used 738 estimated mock tokens across 4 tool calls. Its exact LLM call count was not recorded in the saved comparison file. The Plan-and-Execute run used 2 mock LLM calls and 41 estimated mock tokens across 4 tool calls. Both methods produced the same INR 510 refund outcome.
 
-A separate Plan-and-Execute baseline has not been implemented or measured. Therefore, no numerical performance comparison is claimed. A fair comparison would run both approaches on identical scenarios and measure calls, tokens, latency, accuracy, and safety.
+These are results from separate offline prototype runs. Token counts use the mock LLM's word-based estimation method, not a real model tokenizer or production API usage.
 
+Additional Plan-and-Execute tests:
+- S3: High-value refund escalated for human approval (INR 2,598).
+- S5: Cancelled order denied.
+- S6: Invalid order ID returned NOT_FOUND.
+- Missing order ID: Returned NEEDS_INFO without executing tools.
 
-
-### 7. Design Decisions and Limitations
-
-
+The Plan-and-Execute baseline uses a deterministic Python execution sequence with mock LLM calls for planning and final response generation. Therefore, these measurements are an offline prototype comparison, not a production performance benchmark. The token counts are specific to the mock LLM implementation and should not be generalized to a real language model.
 
 - SQLite is the source of order information.
-
 - Policy retrieval supplies supporting policy context.
-
 - Refund calculations are performed by a dedicated tool.
-
-- Refunds above ₹1,000 require human review.
-
+- Only completed orders with delivery times above 45 minutes qualify for late-delivery refunds.
+- Automatic refunds are limited to INR 1,000; higher amounts require human approval.
+- Tool-level checks validate order status, delivery eligibility, refund amount and approval threshold.
+- Duplicate refund and escalation actions are blocked for the same order.
+- The database does not contain a separate delivery date field. Therefore, the 7-day refund-request deadline cannot be automatically verified.
 - Iteration, token, and time limits prevent unbounded agent execution.
-
 - JSONL logs and checkpoints support auditing and recovery.
-
-- Market-wide order-flow or other unavailable data is not fabricated; similarly, the refund agent relies on the available order and policy data.
-
+- Unavailable data is not fabricated; the refund agent relies on available order and policy data.
 
 
 **Important:** This is a simulated assignment workflow. The refund ledger records simulated actions and should not be treated as a real payment-system integration.
 
-### Policy RAG Implementation and Evaluation
-
-Five policy documents were split into 15 chunks using a 40-word chunk size and 10-word overlap.
-
-The retriever uses:
-- `TfidfVectorizer` to convert policy text into TF-IDF features.
-- Cosine similarity to rank retrieved chunks against each question.
-- Top-3 chunk retrieval to provide context to the policy assistant.
-
-The assistant receives a system instruction marked `POLICY ASSISTANT` and a user message containing separate `CONTEXT` and `QUESTION` sections. It must answer only from the supplied policy context and use the required fallback response when information is unavailable.
-
-**Normal overlap evaluation (10-word overlap):**
-
-| Evaluation | Result |
-|---|---:|
-| Total questions | 14 |
-| Expected document retrieved | 12/12 |
-| Expected fact found in answer | 12/12 |
-| Correct fallback for unanswerable questions | 2/2 |
-
-All 14 evaluation questions passed their expected checks.
-
-
 ### Zero-Overlap RAG Evaluation
 
 The policy assistant was evaluated with chunk overlap temporarily set to 0.
+
 - Answerable questions: 12
 - Expected document retrieved: 12/12
 - Expected fact found in answer: 10/12

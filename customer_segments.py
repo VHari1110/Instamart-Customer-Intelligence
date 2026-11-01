@@ -122,17 +122,10 @@ cluster_features = rfm[
     ["recency", "frequency", "monetary"]
 ].copy()
 
-# Log-transform skewed variables.
-cluster_features["frequency"] = np.log1p(
-    cluster_features["frequency"]
-)
-cluster_features["monetary"] = np.log1p(
-    cluster_features["monetary"].clip(lower=0)
-)
-
-# Scale features.
+# Scale the original RFM features without log transformation.
 scaler = StandardScaler()
 scaled_features = scaler.fit_transform(cluster_features)
+
 
 # Compare K=2 to K=8.
 from sklearn.metrics import silhouette_score

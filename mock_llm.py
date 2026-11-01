@@ -105,12 +105,75 @@ def _agent(messages, tools):
         return _resp("ESCALATE: refund above INR 1000 sent to a human lead.", messages=messages)
     return _resp("DENIED: unable to process.", messages=messages)
 
+
+def _plan_final(messages):
+    """Generate a customer-facing response from executed tool results."""
+    user = next(
+        (m["content"] for m in messages if m["role"] == "user"),
+        ""
+    )
+    result = next(
+        (m["content"] for m in reversed(messages) if m["role"] == "user_result"),
+        "{}"
+    )
+
+    data = json.loads(result)
+    status = data.get("status", "UNKNOWN")
+    amount = data.get("refund_inr", 0)
+
+    if status == "issued":
+        answer = f"REFUND: INR {amount:.2f} issued."
+    elif status == "pending_human_approval":
+        answer = f"ESCALATE: INR {amount:.2f} sent for human approval."
+    else:
+        answer = data.get("message", "The request could not be processed.")
+
+    return _resp(answer, messages=messages)
+
+
+def _plan(messages):
+    """Create a deterministic Plan-and-Execute plan."""
+    user = next(
+        (m["content"] for m in messages if m["role"] == "user"),
+        ""
+    )
+    match = re.search(r"ORD-\d{6}", user)
+
+    if not match:
+        plan = {
+            "status": "NEEDS_INFO",
+            "steps": [],
+            "reason": "Please provide a valid order ID."
+        }
+    else:
+        plan = {
+            "status": "READY",
+            "order_id": match.group(0),
+            "steps": [
+                "get_order",
+                "search_policy",
+                "calculate_refund",
+                "choose_refund_action",
+                "return_result"
+            ]
+        }
+
+    return _resp(json.dumps(plan), messages=messages)
+
 def chat(messages, tools=None):
     head = messages[0]["content"].upper()
+
     if "CLASSIFY" in head:
         return _classify(messages)
     if "POLICY ASSISTANT" in head:
         return _policy(messages)
+    if "PLAN_FINAL" in head:
+        return _plan_final(messages)
+    if "PLAN" in head:
+        return _plan(messages)
     if "AGENT" in head:
         return _agent(messages, tools)
-    raise ValueError("first message must name one of: CLASSIFY, POLICY ASSISTANT, AGENT")
+
+    raise ValueError(
+        "first message must name one of: CLASSIFY, POLICY ASSISTANT, PLAN_FINAL, PLAN, AGENT"
+    )
