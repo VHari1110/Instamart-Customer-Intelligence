@@ -10,35 +10,25 @@ All refund actions are simulated. No real payments or refunds are processed.
 
 Run all commands from the project root using the project virtual environment.
 
-### 1. Install dependencies
-
-
-
+1. Install dependencies
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 
-
-### 2. Audit and clean raw data
-
+2. Audit and clean raw data
 .\.venv\Scripts\python.exe data\clean\audit_data.py
 .\.venv\Scripts\python.exe data\clean\clean_customers.py
 .\.venv\Scripts\python.exe data\clean\clean_orders.py
 .\.venv\Scripts\python.exe data\clean\clean_products.py
 
-### 3. Build and validate the database
-
+3. Build and validate the database
 .\.venv\Scripts\python.exe build_database.py
 .\.venv\Scripts\python.exe validate_project.py
 
-### 4. Run customer segmentation and lapse prediction
-
+4. Run customer segmentation and lapse prediction
 .\.venv\Scripts\python.exe customer_segments.py
 .\.venv\Scripts\python.exe lapse_model.py
 
-### 5. Run ticket classification
-
-The Part C script uses the pre-generated assignment input file:
-outputs/customer_segments_assignment.csv
-
+5. Run ticket classification
+The Part C script uses the pre-generated assignment input file: outputs/customer_segments_assignment.csv
 .\.venv\Scripts\python.exe src\part_c_triage.py
 
 ### 6. Refund agent
