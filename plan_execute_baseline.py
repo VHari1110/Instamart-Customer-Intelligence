@@ -5,7 +5,7 @@ import tempfile
 import time
 from pathlib import Path
 
-import mock_llm
+import plan_execute_mock as plan_llm
 import refund_agent as agent
 
 
@@ -35,7 +35,7 @@ def run_plan_execute(user_message, scenario_id="MANUAL"):
             ]
 
             # Phase 1: Create the plan.
-            response = mock_llm.chat(messages)
+            response = plan_llm.chat(messages)
             llm_calls += 1
             tokens_used += response.usage.total_tokens
 
@@ -155,7 +155,7 @@ def run_plan_execute(user_message, scenario_id="MANUAL"):
         }
     ]
 
-    response = mock_llm.chat(final_messages)
+    response = plan_llm.chat(final_messages)
     llm_calls += 1
     tokens_used += response.usage.total_tokens
     final_answer = response.choices[0].message.content
@@ -174,7 +174,7 @@ def run_plan_execute(user_message, scenario_id="MANUAL"):
 
 
 if __name__ == "__main__":
-    mock_llm.reset()
+    plan_llm.reset()
 
     result = run_plan_execute(
         "Process refund for ORD-104043",
