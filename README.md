@@ -419,7 +419,7 @@ The implementation uses Python, SQLite, a policy retriever, and the supplied `mo
 | S4 | DENIED ₹0.00 | DENIED | PASS |
 | S5 | DENIED ₹0.00 | DENIED | PASS |
 | S6 | NOT_FOUND ₹0.00 | NOT_FOUND | PASS |
-| S7 | FALLBACK_LOOP | FALLBACK_LOOP | PASS |
+| S7 | FALLBACK_MAX_ITERATIONS | FALLBACK_MAX_ITERATIONS | PASS |
 
 
 All seven scenarios produced the expected outcome categories.
@@ -440,7 +440,7 @@ All seven scenarios produced the expected outcome categories.
 
 - S6 returned NOT_FOUND because the order did not exist.
 
-- S7 triggered the repeated-tool-call protection. The agent detected the repeated policy-search request, prevented its re-execution, and returned FALLBACK_LOOP after 2 LLM calls and 1 tool execution.
+- S7 triggered repeated-tool-call protection. The duplicate policy-search request was blocked without re-execution. The agent continued until the configured iteration limit and returned FALLBACK_MAX_ITERATIONS after 6 LLM calls and 1 executed tool.
 
 
 
@@ -449,14 +449,13 @@ All seven scenarios produced the expected outcome categories.
 
 | Test | Configuration | Observed result |
 |---|---|---|
-| Token limit | `token_limit=1` | `FALLBACK_TOKEN_LIMIT` |
+| Token limit | `token_limit=200` | `FALLBACK_TOKEN_LIMIT` |
 | Timeout | `time_limit_seconds=0` | `FALLBACK_TIMEOUT` |
 | Maximum iterations | `max_iterations=1` | `FALLBACK_MAX_ITERATIONS` |
 
+The token-limit test returned `FALLBACK_TOKEN_LIMIT` with a configured limit of 200 tokens. It used 466 tokens across three LLM calls. No refund was issued.
 
 The timeout test returned `FALLBACK_TIMEOUT` with zero LLM calls and no tool executions.
-
-The token-limit test returned `FALLBACK_TOKEN_LIMIT` with a limit of 200 tokens. It used 430 tokens across three LLM calls and executed two tools: `get_order` and `search_policy`. No refund was issued.
 
 The maximum-iteration test returned `FALLBACK_MAX_ITERATIONS` after three LLM calls and three `search_policy` tool executions.
 
@@ -470,14 +469,14 @@ Crash recovery was tested using a dedicated checkpoint ID and an isolated tempor
 - The mock LLM returned the same `search_policy` call repeatedly.
 - The first tool execution was recorded.
 - The repeated call was detected before a second execution.
-- The agent returned `FALLBACK_LOOP` after 2 LLM calls and 1 tool execution.
+- The duplicate tool call was blocked. The agent continued until the configured iteration limit and returned `FALLBACK_MAX_ITERATIONS` after 6 LLM calls and 1 executed tool.
 - The isolated S7 checkpoint records one completed tool execution. The final status was verified from the test output.
 
 **S1 normal workflow crash-and-resume test:**
-- Simulated a crash immediately after the first tool execution (`get_order`).
+- Simulated a crash immediately after the second tool execution (`search_policy`).
 - Verified that a checkpoint was created.
 - Resumed the agent from the saved checkpoint.
-- The remaining tools executed: `search_policy`, `calculate_refund`, and `issue_refund`.
+- The remaining tools executed after resume: `calculate_refund` and `issue_refund`.
 - The resumed workflow returned `REFUND: INR 128.25 issued.`
 - Used a separate test ledger, leaving the main refund ledger untouched.
 - Verified that exactly one refund entry was created for ORD-100048, amount INR 128.25.
@@ -497,9 +496,10 @@ These tests verify the tested recovery paths; they do not establish crash safety
 The file `outputs/agent_runs.jsonl` contains historical scenario logs for S1 through S7. These entries reflect the runs recorded at that time and should not be treated as the latest regression results.
 
 The latest regression tests were run with isolated artifacts:
-- Refund ledger: `outputs/regression_fix_20261103/`
-- Checkpoints: `state/regression_fix_20261103/`
-- S7 loop-fix checkpoint: `state/S7_LOOP_FIX_TEST_20261103.json`
+- Crash-resume refund ledger: `outputs/regression_crash_resume/refund_ledger.jsonl`
+- Crash-resume checkpoint: `state/regression_crash_resume/REGRESSION_CRASH_RESUME_SECOND_TOOL.json`
+- S7 loop-fix checkpoint: `state/regression_s7_loop_fix/REGRESSION_S7_LOOP_FIX.json`
+- Token-limit checkpoint: `state/regression_token_limit/REGRESSION_TOKEN_LIMIT.json`
 
 The isolated regression tests left the main refund ledger untouched.
 
