@@ -35,3 +35,7 @@ state/REGRESSION_*.json
 state/S1_FINAL_CHECK.json
 state/S1_STATUS_TEST.json
 state/S7_TEST_LOOP_FIX.json
+
+# Local refund agent recovery backups
+refund_agent.py.backup
+refund_agent.py.broken
