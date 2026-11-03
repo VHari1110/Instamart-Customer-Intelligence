@@ -315,24 +315,6 @@ def run_agent(
             status = final_answer.split(":", 1)[0].strip().upper()
             break
 
-        duplicate_call = False
-
-        for call in tool_calls:
-            call_key = (
-                call.name,
-                json.dumps(call.arguments, sort_keys=True)
-            )
-
-            if call_key in seen_tool_calls:
-                status = "FALLBACK_LOOP"
-                final_answer = (
-                    "Human handoff required: repeated tool call detected."
-                )
-                duplicate_call = True
-                break
-
-        if duplicate_call:
-            break
         assistant_calls = []
         for call in tool_calls:
             assistant_calls.append({
@@ -358,22 +340,28 @@ def run_agent(
                 tool_name,
                 json.dumps(arguments, sort_keys=True)
             )
-            seen_tool_calls.add(call_key)
 
-            if tool_name not in TOOL_MAP:
-                observation = {"error": f"Unknown tool: {tool_name}"}
+            is_duplicate = call_key in seen_tool_calls
+
+            if is_duplicate:
+                observation = {"error": "Repeated tool call blocked."}
             else:
-                try:
-                    observation = TOOL_MAP[tool_name](**arguments)
-                except Exception as exc:
-                    observation = {"error": str(exc)}
+                seen_tool_calls.add(call_key)
 
-            steps.append({
-                "tool": tool_name,
-                "arguments": arguments,
-                "observation": observation,
-            })
-            tool_count += 1
+                if tool_name not in TOOL_MAP:
+                    observation = {"error": f"Unknown tool: {tool_name}"}
+                else:
+                    try:
+                        observation = TOOL_MAP[tool_name](**arguments)
+                    except Exception as exc:
+                        observation = {"error": str(exc)}
+
+                steps.append({
+                    "tool": tool_name,
+                    "arguments": arguments,
+                    "observation": observation,
+                })
+                tool_count += 1
 
             messages.append({
                 "role": "tool",
@@ -382,23 +370,23 @@ def run_agent(
                 "content": json.dumps(observation, default=str),
             })
 
-            save_checkpoint(
-                run_id,
-                scenario_id,
-                messages,
-                tokens_used,
-                tool_count,
-                steps,
-            )
-
-            if (
-                crash_after_tool_count is not None
-                and tool_count == crash_after_tool_count
-            ):
-                raise RuntimeError(
-                    f"Simulated crash after tool execution {tool_count}"
+            if not is_duplicate:
+                save_checkpoint(
+                    run_id,
+                    scenario_id,
+                    messages,
+                    tokens_used,
+                    tool_count,
+                    steps,
                 )
 
+                if (
+                    crash_after_tool_count is not None
+                    and tool_count == crash_after_tool_count
+                ):
+                    raise RuntimeError(
+                        f"Simulated crash after tool execution {tool_count}"
+                    )
     else:
         status = "FALLBACK_MAX_ITERATIONS"
         final_answer = "Human handoff required: maximum iterations reached."
@@ -442,7 +430,11 @@ def resume_agent(run_id):
         checkpoint = json.load(file)
 
     result = run_agent(
-        user_message=checkpoint["messages"][-1]["content"],
+        user_message=next(
+            message["content"]
+            for message in checkpoint["messages"]
+            if message["role"] == "user"
+        ),
         scenario_id=checkpoint["scenario_id"],
         run_id=run_id,
         resume_data=checkpoint,
