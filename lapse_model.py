@@ -428,8 +428,8 @@ def main():
         "Tuned Random Forest", best_rf, X_test, y_test
     )
 
-    # Select the higher-F1 model; the untouched test set is not used for tuning.
-    if rf_metrics["f1"] >= lr_metrics["f1"]:
+    # Select the model using training-only cross-validation F1.
+    if rf_grid.best_score_ >= lr_grid.best_score_:
         selected_model = best_rf
         selected_name = "Random Forest"
     else:

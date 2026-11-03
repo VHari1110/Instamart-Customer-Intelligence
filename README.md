@@ -272,9 +272,8 @@ Feature importance and coefficients describe model associations; they do not est
 
 ### Selected Model
 
-Random Forest was selected based on its stronger cross-validation F1 score and test performance.
+Random Forest was selected based on its higher training-only cross-validation F1 score (0.6811 vs. 0.6506). The test set was used only to evaluate the selected model, not to choose between models.The most important features included:
 
-The most important features included:
 - Purchase frequency
 - Monetary value
 - Recency
