@@ -282,6 +282,11 @@ def run_agent(
         tokens_used = 0
         tool_count = 0
 
+    seen_tool_calls = {
+        (step["tool"], json.dumps(step["arguments"], sort_keys=True))
+        for step in steps
+    }
+
     status = None
     final_answer = ""
 
@@ -310,6 +315,25 @@ def run_agent(
             status = final_answer.split(":", 1)[0].strip().upper()
             break
 
+        duplicate_call = False
+
+        for call in tool_calls:
+            call_key = (
+                call.name,
+                json.dumps(call.arguments, sort_keys=True)
+            )
+
+            if call_key in seen_tool_calls:
+                status = "FALLBACK_LOOP"
+                final_answer = (
+                    "Human handoff required: repeated tool call detected."
+                )
+                duplicate_call = True
+                break
+
+        if duplicate_call:
+            continue
+
         assistant_calls = []
         for call in tool_calls:
             assistant_calls.append({
@@ -330,6 +354,12 @@ def run_agent(
         for call in tool_calls:
             tool_name = call.name
             arguments = call.arguments
+
+            call_key = (
+                tool_name,
+                json.dumps(arguments, sort_keys=True)
+            )
+            seen_tool_calls.add(call_key)
 
             if tool_name not in TOOL_MAP:
                 observation = {"error": f"Unknown tool: {tool_name}"}

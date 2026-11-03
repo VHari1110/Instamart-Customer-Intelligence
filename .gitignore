@@ -20,3 +20,18 @@ __pycache__/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local audit backups and temporary verification artifacts
+README_before*.md
+*_before_*.py
+*_backup.py
+*_diff.txt
+originality_fix_backup_*/
+outputs/*_before_audit.csv
+outputs/refund_ledger_crash_resume_test.jsonl
+state/CRASH_RESUME_AUDIT_*.json
+state/EVAL_*.json
+state/REGRESSION_*.json
+state/S1_FINAL_CHECK.json
+state/S1_STATUS_TEST.json
+state/S7_TEST_LOOP_FIX.json

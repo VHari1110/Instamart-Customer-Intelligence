@@ -440,7 +440,7 @@ All seven scenarios produced the expected outcome categories.
 
 - S6 returned NOT_FOUND because the order did not exist.
 
-- S7 triggered the maximum-iteration fallback because the model repeatedly requested a policy search.
+- S7 triggered the repeated-tool-call protection. The agent detected the repeated policy-search request, prevented its re-execution, and eventually returned FALLBACK_MAX_ITERATIONS.
 
 
 
@@ -460,35 +460,33 @@ The token-limit test returned `FALLBACK_TOKEN_LIMIT` with a limit of 200 tokens.
 
 The maximum-iteration test returned `FALLBACK_MAX_ITERATIONS` after three LLM calls and three `search_policy` tool executions.
 
-All three safety tests passed their expected fallback checks.
+All three safety tests passed their expected results.
 
+### 4. Crash, Resume and Loop Protection Tests
 
-### 4. Crash and Resume Test
+Crash recovery was tested using a dedicated checkpoint ID and an isolated temporary refund ledger. The main refund ledger was not modified.
 
-A crash-and-resume test was successfully completed using an isolated temporary environment.
+**S7 loop-protection test:**
+- Simulated a crash immediately after the first `search_policy` tool execution.
+- Verified that a checkpoint was created with the completed tool step, messages and observation.
+- Resumed the agent from the checkpoint.
+- The repeated policy-search call was detected and not executed a second time.
+- The agent returned `FALLBACK_MAX_ITERATIONS` after exhausting its iteration limit.
 
-The S1 run was intentionally interrupted immediately after the second tool execution. The checkpoint recorded these completed tools:
+**S1 normal workflow crash-and-resume test:**
+- Simulated a crash immediately after the second tool execution (`search_policy`).
+- Verified that the checkpoint contained exactly two completed tools: `get_order` and `search_policy`.
+- Resumed the agent from the saved checkpoint.
+- The remaining tools executed in order: `calculate_refund` and `issue_refund`.
+- The complete tool sequence contained exactly four executions: `get_order`, `search_policy`, `calculate_refund`, and `issue_refund`.
+- Used a separate test ledger, leaving the main refund ledger untouched.
+- Verified that exactly one `issue_refund` entry was created for INR 128.25.
 
-1. `get_order`
-2. `search_policy`
+**Checkpoint integrity:** The saved checkpoint was inspected and contained the run ID, scenario ID, conversation messages, token count, completed tool step, arguments and tool observation.
 
-After resuming from the checkpoint, the agent continued with:
+**Results:** Loop protection, checkpoint creation, resume operation, checkpoint integrity and duplicate-action prevention passed the tested scenarios.
 
-3. `calculate_refund`
-4. `issue_refund`
-
-The combined tool sequence was:
-
-`get_order` → `search_policy` → `calculate_refund` → `issue_refund`
-
-The first two tools were not repeated after resuming.
-
-**Final result:** `REFUND: INR 128.25 issued.`
-
-**Verification:** `CRASH RESUME TEST: PASS`
-
-The test created exactly one simulated refund ledger entry in a temporary environment. Existing project ledger and checkpoint files were preserved.
-
+These tests verify the tested recovery paths; they do not establish crash safety under concurrent execution or every possible failure condition.
 
 ### 5. Run Logging
 
@@ -498,47 +496,32 @@ The file was verified to contain seven log entries, covering scenarios S1 throug
 
 Checkpoint files are stored in the `state/` directory.
 
+
+To run the refund agent scenario evaluation:
+
+
+```bash
+python evaluate_agent.py
+```
+Expected result: 7 scenarios passed, 0 failed (100%).
+
+
+
 ### 6. ReAct vs. Plan-and-Execute
 
+The implemented refund agent follows the ReAct pattern. It alternates between reasoning, tool execution, and observations. Each tool result can influence the next action.
 
-
-The implemented agent follows the ReAct pattern. It alternates between model reasoning, tool execution, and tool observations. This allows the agent to use the latest order and policy results before deciding its next action.
-
-Plan-and-Execute follows a different approach: it creates a sequence of steps before execution and then carries out that plan. It can reduce repeated planning decisions, but may need replanning when a tool result differs from expectations.
+Plan-and-Execute creates a sequence of steps before executing them. This can reduce repeated planning calls, but unexpected tool results may require replanning.
 
 | Aspect | ReAct | Plan-and-Execute |
 |---|---|---|
-| Decision process | Alternates reasoning and actions | Plans steps before execution |
-| Tool results | Can influence the next action immediately | May require replanning |
-| Flexibility | Adapts after each observation | Depends on the quality of the initial plan |
-| Potential limitation | More model calls during repeated reasoning | An initial plan may become outdated |
+| Workflow | Reasons and acts iteratively | Plans before execution |
+| Adaptability | Responds to each observation | May require replanning |
+| Limitation | Repeated reasoning can increase calls | Initial plans can become outdated |
 
-For the recorded S1 comparison, the ReAct run used 738 estimated mock tokens across 4 tool calls. Its exact LLM call count was not recorded in the saved comparison file. The Plan-and-Execute run used 2 mock LLM calls and 41 estimated mock tokens across 4 tool calls. Both methods produced the same INR 510 refund outcome.
+In the recorded offline S1 comparison, ReAct used 738 estimated mock tokens across 4 tool calls. Its exact LLM call count was not recorded. Plan-and-Execute used 2 mock LLM calls and 41 estimated tokens across 4 tool calls. Both produced the same INR 510 refund outcome.
 
-These are results from separate offline prototype runs. Token counts use the mock LLM's word-based estimation method, not a real model tokenizer or production API usage.
-
-Additional Plan-and-Execute tests:
-- S3: High-value refund escalated for human approval (INR 2,598).
-- S5: Cancelled order denied.
-- S6: Invalid order ID returned NOT_FOUND.
-- Missing order ID: Returned NEEDS_INFO without executing tools.
-
-The Plan-and-Execute baseline uses a deterministic Python execution sequence with mock LLM calls for planning and final response generation. Therefore, these measurements are an offline prototype comparison, not a production performance benchmark. The token counts are specific to the mock LLM implementation and should not be generalized to a real language model.
-
-- SQLite is the source of order information.
-- Policy retrieval supplies supporting policy context.
-- Refund calculations are performed by a dedicated tool.
-- Only completed orders with delivery times above 45 minutes qualify for late-delivery refunds.
-- Automatic refunds are limited to INR 1,000; higher amounts require human approval.
-- Tool-level checks validate order status, delivery eligibility, refund amount and approval threshold.
-- Duplicate refund and escalation actions are blocked for the same order.
-- The database does not contain a separate delivery date field. Therefore, the 7-day refund-request deadline cannot be automatically verified.
-- Iteration, token, and time limits prevent unbounded agent execution.
-- JSONL logs and checkpoints support auditing and recovery.
-- Unavailable data is not fabricated; the refund agent relies on available order and policy data.
-
-
-**Important:** This is a simulated assignment workflow. The refund ledger records simulated actions and should not be treated as a real payment-system integration.
+These measurements use the mock LLM's word-based token estimation. They are prototype results, not production performance benchmarks.
 
 ### Zero-Overlap RAG Evaluation
 
