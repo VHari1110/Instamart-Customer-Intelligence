@@ -1,0 +1,47 @@
+{
+  "run_id": "REGRESSION_FIX_20261103_S6",
+  "scenario_id": "S6",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are an Instamart refund support AGENT. Use tools to check orders, retrieve policy, calculate refunds, and issue eligible refunds or escalate refunds above INR 1000. Only completed orders may be refunded. Never invent order data."
+    },
+    {
+      "role": "user",
+      "content": "Refund for order ORD-999999 please."
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_1",
+          "type": "function",
+          "function": {
+            "name": "get_order",
+            "arguments": "{\"order_id\": \"ORD-999999\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_1",
+      "name": "get_order",
+      "content": "{\"error\": \"order not found\"}"
+    }
+  ],
+  "tokens_used": 64,
+  "step_number": 1,
+  "steps": [
+    {
+      "tool": "get_order",
+      "arguments": {
+        "order_id": "ORD-999999"
+      },
+      "observation": {
+        "error": "order not found"
+      }
+    }
+  ]
+}

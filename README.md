@@ -419,7 +419,7 @@ The implementation uses Python, SQLite, a policy retriever, and the supplied `mo
 | S4 | DENIED ₹0.00 | DENIED | PASS |
 | S5 | DENIED ₹0.00 | DENIED | PASS |
 | S6 | NOT_FOUND ₹0.00 | NOT_FOUND | PASS |
-| S7 | FALLBACK | FALLBACK_MAX_ITERATIONS | PASS |
+| S7 | FALLBACK_LOOP | FALLBACK_LOOP | PASS |
 
 
 All seven scenarios produced the expected outcome categories.
@@ -440,7 +440,7 @@ All seven scenarios produced the expected outcome categories.
 
 - S6 returned NOT_FOUND because the order did not exist.
 
-- S7 triggered the repeated-tool-call protection. The agent detected the repeated policy-search request, prevented its re-execution, and eventually returned FALLBACK_MAX_ITERATIONS.
+- S7 triggered the repeated-tool-call protection. The agent detected the repeated policy-search request, prevented its re-execution, and returned FALLBACK_LOOP after 2 LLM calls and 1 tool execution.
 
 
 
@@ -449,9 +449,9 @@ All seven scenarios produced the expected outcome categories.
 
 | Test | Configuration | Observed result |
 |---|---|---|
-| Token limit | `token_limit=200` | `FALLBACK_TOKEN_LIMIT` |
+| Token limit | `token_limit=1` | `FALLBACK_TOKEN_LIMIT` |
 | Timeout | `time_limit_seconds=0` | `FALLBACK_TIMEOUT` |
-| Maximum iterations | `max_iterations=3` | `FALLBACK_MAX_ITERATIONS` |
+| Maximum iterations | `max_iterations=1` | `FALLBACK_MAX_ITERATIONS` |
 
 
 The timeout test returned `FALLBACK_TIMEOUT` with zero LLM calls and no tool executions.
@@ -467,45 +467,45 @@ All three safety tests passed their expected results.
 Crash recovery was tested using a dedicated checkpoint ID and an isolated temporary refund ledger. The main refund ledger was not modified.
 
 **S7 loop-protection test:**
-- Simulated a crash immediately after the first `search_policy` tool execution.
-- Verified that a checkpoint was created with the completed tool step, messages and observation.
-- Resumed the agent from the checkpoint.
-- The repeated policy-search call was detected and not executed a second time.
-- The agent returned `FALLBACK_MAX_ITERATIONS` after exhausting its iteration limit.
+- The mock LLM returned the same `search_policy` call repeatedly.
+- The first tool execution was recorded.
+- The repeated call was detected before a second execution.
+- The agent returned `FALLBACK_LOOP` after 2 LLM calls and 1 tool execution.
+- The isolated S7 checkpoint records one completed tool execution. The final status was verified from the test output.
 
 **S1 normal workflow crash-and-resume test:**
-- Simulated a crash immediately after the second tool execution (`search_policy`).
-- Verified that the checkpoint contained exactly two completed tools: `get_order` and `search_policy`.
+- Simulated a crash immediately after the first tool execution (`get_order`).
+- Verified that a checkpoint was created.
 - Resumed the agent from the saved checkpoint.
-- The remaining tools executed in order: `calculate_refund` and `issue_refund`.
-- The complete tool sequence contained exactly four executions: `get_order`, `search_policy`, `calculate_refund`, and `issue_refund`.
+- The remaining tools executed: `search_policy`, `calculate_refund`, and `issue_refund`.
+- The resumed workflow returned `REFUND: INR 128.25 issued.`
 - Used a separate test ledger, leaving the main refund ledger untouched.
-- Verified that exactly one `issue_refund` entry was created for INR 128.25.
+- Verified that exactly one refund entry was created for ORD-100048, amount INR 128.25.
 
-**Checkpoint integrity:** The saved checkpoint was inspected and contained the run ID, scenario ID, conversation messages, token count, completed tool step, arguments and tool observation.
+**Duplicate-action protection:**
+- Repeated refund and escalation attempts for already-processed orders returned `already_processed`.
+- The isolated ledger contained 3 entries before and after the duplicate attempts.
+- No additional ledger entries were created.
 
-**Results:** Loop protection, checkpoint creation, resume operation, checkpoint integrity and duplicate-action prevention passed the tested scenarios.
+**Checkpoint integrity:** The inspected checkpoints contained run IDs, scenario IDs, conversation messages, token counts, completed tool steps, arguments and tool observations. The checkpoint format does not store the final status; statuses above were verified from test output.
 
-These tests verify the tested recovery paths; they do not establish crash safety under concurrent execution or every possible failure condition.
+**Results:** The tested loop-protection, checkpoint creation, resume operation and duplicate-action checks passed.
 
+These tests verify the tested recovery paths; they do not establish crash safety under concurrent execution or every possible failure condition. The ledger duplicate check and append are separate operations, so concurrent requests could still require additional protection.
 ### 5. Run Logging
 
-Scenario results are recorded in `outputs/agent_runs.jsonl`.
+The file `outputs/agent_runs.jsonl` contains historical scenario logs for S1 through S7. These entries reflect the runs recorded at that time and should not be treated as the latest regression results.
 
-The file was verified to contain seven log entries, covering scenarios S1 through S7. Each entry records the scenario ID, status, final answer, LLM call count, token usage, and tool-step details.
+The latest regression tests were run with isolated artifacts:
+- Refund ledger: `outputs/regression_fix_20261103/`
+- Checkpoints: `state/regression_fix_20261103/`
+- S7 loop-fix checkpoint: `state/S7_LOOP_FIX_TEST_20261103.json`
+
+The isolated regression tests left the main refund ledger untouched.
+
+**Important:** `evaluate_agent.py` can append entries to the refund ledger and overwrite evaluation checkpoints. Do not run it in this preserved working project. To reproduce the full evaluation, first create a separate isolated copy of the project and use separate ledger and checkpoint paths.
 
 Checkpoint files are stored in the `state/` directory.
-
-
-To run the refund agent scenario evaluation:
-
-
-```bash
-python evaluate_agent.py
-```
-Expected result: 7 scenarios passed, 0 failed (100%).
-
-
 
 ### 6. ReAct vs. Plan-and-Execute
 

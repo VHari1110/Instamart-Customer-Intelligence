@@ -332,8 +332,7 @@ def run_agent(
                 break
 
         if duplicate_call:
-            continue
-
+            break
         assistant_calls = []
         for call in tool_calls:
             assistant_calls.append({
